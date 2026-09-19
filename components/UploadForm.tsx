@@ -51,7 +51,7 @@ const UploadForm = () => {
         // PostHog -> Track Book Uploads...
 
         try {
-            const existsCheck = await checkBookExists(data.title);
+            const existsCheck = await checkBookExists(userId, data.title);
 
             if(existsCheck.exists && existsCheck.book) {
                 toast.info("Book with same title already exists.");

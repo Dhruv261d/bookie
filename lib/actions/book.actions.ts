@@ -1,28 +1,27 @@
 'use server';
 
-import {CreateBook, TextSegment} from "@/types";
-import {connectToDatabase} from "@/database/mongoose";
-import {escapeRegex, generateSlug, serializeData} from "@/lib/utils";
+import { FilterQuery } from "mongoose";
+import { IBook, CreateBook, TextSegment } from "@/types";
+import { connectToDatabase } from "@/database/mongoose";
+import { escapeRegex, generateSlug, serializeData } from "@/lib/utils";
 import Book from "@/database/models/book.model";
 import BookSegment from "@/database/models/book-segment.model";
 import mongoose from "mongoose";
-import {getUserPlan} from "@/lib/subscription.server";
+import { getUserPlan } from "@/lib/subscription.server";
 
-export const getAllBooks = async (search?: string) => {
+export const getAllBooks = async (clerkId: string, search?: string) => {
     try {
         await connectToDatabase();
 
-        let query = {};
+        const query: FilterQuery<IBook> = { clerkId };
 
         if (search) {
             const escapedSearch = escapeRegex(search);
             const regex = new RegExp(escapedSearch, 'i');
-            query = {
-                $or: [
-                    { title: { $regex: regex } },
-                    { author: { $regex: regex } },
-                ]
-            };
+            query.$or = [
+                { title: { $regex: regex } },
+                { author: { $regex: regex } },
+            ];
         }
 
         const books = await Book.find(query).sort({ createdAt: -1 }).lean();
@@ -39,13 +38,13 @@ export const getAllBooks = async (search?: string) => {
     }
 }
 
-export const checkBookExists = async (title: string) => {
+export const checkBookExists = async (clerkId: string, title: string) => {
     try {
         await connectToDatabase();
 
         const slug = generateSlug(title);
 
-        const existingBook = await Book.findOne({slug}).lean();
+        const existingBook = await Book.findOne({ slug, clerkId }).lean();
 
         if(existingBook) {
             return {
@@ -128,7 +127,14 @@ export const getBookBySlug = async (slug: string) => {
     try {
         await connectToDatabase();
 
-        const book = await Book.findOne({ slug }).lean();
+        const { auth } = await import("@clerk/nextjs/server");
+        const { userId } = await auth();
+
+        if (!userId) {
+            return { success: false, error: 'Unauthorized' };
+        }
+
+        const book = await Book.findOne({ slug, clerkId: userId }).lean();
 
         if (!book) {
             return { success: false, error: 'Book not found' };

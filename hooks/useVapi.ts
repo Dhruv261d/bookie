@@ -29,9 +29,11 @@ const TIME_WARNING_THRESHOLD = 60; // Show warning when this many seconds remain
 
 let vapi: InstanceType<typeof Vapi>;
 function getVapi() {
+    if (typeof window === 'undefined') return null;
     if (!vapi) {
         if (!VAPI_API_KEY) {
-            throw new Error('NEXT_PUBLIC_VAPI_API_KEY environment variable is not set');
+            console.warn('NEXT_PUBLIC_VAPI_API_KEY environment variable is not set');
+            return null;
         }
         vapi = new Vapi(VAPI_API_KEY);
     }
@@ -65,167 +67,182 @@ export function useVapi(book: IBook) {
 
     // Set up Vapi event listeners
     useEffect(() => {
-        const handlers = {
-            'call-start': () => {
-                isStoppingRef.current = false;
-                setStatus('starting'); // AI speaks first, wait for it
-                setCurrentMessage('');
-                setCurrentUserMessage('');
+        const vapiInstance = getVapi();
+        if (!vapiInstance) return;
 
-                // Start duration timer
-                startTimeRef.current = Date.now();
-                setDuration(0);
-                timerRef.current = setInterval(() => {
-                    if (startTimeRef.current) {
-                        const newDuration = Math.floor((Date.now() - startTimeRef.current) / TIMER_INTERVAL_MS);
-                        setDuration(newDuration);
+        const handleCallStart = () => {
+            isStoppingRef.current = false;
+            setStatus('starting'); // AI speaks first, wait for it
+            setCurrentMessage('');
+            setCurrentUserMessage('');
 
-                        // Check duration limit
-                        if (newDuration >= maxDurationRef.current) {
-                            getVapi().stop();
-                            setLimitError(
-                                `Session time limit (${Math.floor(
-                                    maxDurationRef.current / SECONDS_PER_MINUTE,
-                                )} minutes) reached. Upgrade your plan for longer sessions.`,
-                            );
-                        }
-                    }
-                }, TIMER_INTERVAL_MS);
-            },
+            // Start duration timer
+            startTimeRef.current = Date.now();
+            setDuration(0);
+            timerRef.current = setInterval(() => {
+                if (startTimeRef.current) {
+                    const newDuration = Math.floor((Date.now() - startTimeRef.current) / TIMER_INTERVAL_MS);
+                    setDuration(newDuration);
 
-            'call-end': () => {
-                // Don't reset isStoppingRef here - delayed events may still fire
-                setStatus('idle');
-                setCurrentMessage('');
-                setCurrentUserMessage('');
-
-                // Stop timer
-                if (timerRef.current) {
-                    clearInterval(timerRef.current);
-                    timerRef.current = null;
-                }
-
-                // End session tracking
-                if (sessionIdRef.current) {
-                    endVoiceSession(sessionIdRef.current, durationRef.current).catch((err) =>
-                        console.error('Failed to end voice session:', err),
-                    );
-                    sessionIdRef.current = null;
-                }
-
-                startTimeRef.current = null;
-            },
-
-            'speech-start': () => {
-                if (!isStoppingRef.current) {
-                    setStatus('speaking');
-                }
-            },
-            'speech-end': () => {
-                if (!isStoppingRef.current) {
-                    // After AI finishes speaking, user can talk
-                    setStatus('listening');
-                }
-            },
-
-            message: (message: {
-                type: string;
-                role: string;
-                transcriptType: string;
-                transcript: string;
-            }) => {
-                if (message.type !== 'transcript') return;
-
-                // User finished speaking → AI is thinking
-                if (message.role === 'user' && message.transcriptType === 'final') {
-                    if (!isStoppingRef.current) {
-                        setStatus('thinking');
-                    }
-                    setCurrentUserMessage('');
-                }
-
-                // Partial user transcript → show real-time typing
-                if (message.role === 'user' && message.transcriptType === 'partial') {
-                    setCurrentUserMessage(message.transcript);
-                    return;
-                }
-
-                // Partial AI transcript → show word-by-word
-                if (message.role === 'assistant' && message.transcriptType === 'partial') {
-                    setCurrentMessage(message.transcript);
-                    return;
-                }
-
-                // Final transcript → add to messages
-                if (message.transcriptType === 'final') {
-                    if (message.role === 'assistant') setCurrentMessage('');
-                    if (message.role === 'user') setCurrentUserMessage('');
-
-                    setMessages((prev) => {
-                        const isDupe = prev.some(
-                            (m) => m.role === message.role && m.content === message.transcript,
+                    // Check duration limit
+                    if (newDuration >= maxDurationRef.current) {
+                        getVapi()?.stop();
+                        setLimitError(
+                            `Session time limit (${Math.floor(
+                                maxDurationRef.current / SECONDS_PER_MINUTE,
+                            )} minutes) reached. Upgrade your plan for longer sessions.`,
                         );
-                        return isDupe ? prev : [...prev, { role: message.role, content: message.transcript }];
-                    });
+                    }
                 }
-            },
+            }, TIMER_INTERVAL_MS);
+        };
 
-            error: (error: Error) => {
-                console.error('Vapi error:', error);
-                // Don't reset isStoppingRef here - delayed events may still fire
-                setStatus('idle');
-                setCurrentMessage('');
+        const handleCallEnd = () => {
+            // Don't reset isStoppingRef here - delayed events may still fire
+            setStatus('idle');
+            setCurrentMessage('');
+            setCurrentUserMessage('');
+
+            // Stop timer
+            if (timerRef.current) {
+                clearInterval(timerRef.current);
+                timerRef.current = null;
+            }
+
+            // End session tracking
+            if (sessionIdRef.current) {
+                endVoiceSession(sessionIdRef.current, durationRef.current).catch((err) =>
+                    console.error('Failed to end voice session:', err),
+                );
+                sessionIdRef.current = null;
+            }
+
+            startTimeRef.current = null;
+        };
+
+        const handleSpeechStart = () => {
+            if (!isStoppingRef.current) {
+                setStatus('speaking');
+            }
+        };
+
+        const handleSpeechEnd = () => {
+            if (!isStoppingRef.current) {
+                // After AI finishes speaking, user can talk
+                setStatus('listening');
+            }
+        };
+
+        const handleMessage = (message: {
+            type: string;
+            role: string;
+            transcriptType: string;
+            transcript: string;
+        }) => {
+            if (message.type !== 'transcript') return;
+
+            // User finished speaking → AI is thinking
+            if (message.role === 'user' && message.transcriptType === 'final') {
+                if (!isStoppingRef.current) {
+                    setStatus('thinking');
+                }
                 setCurrentUserMessage('');
+            }
 
-                // Stop timer on error
-                if (timerRef.current) {
-                    clearInterval(timerRef.current);
-                    timerRef.current = null;
-                }
+            // Partial user transcript → show real-time typing
+            if (message.role === 'user' && message.transcriptType === 'partial') {
+                setCurrentUserMessage(message.transcript);
+                return;
+            }
 
-                // End session tracking on error
-                if (sessionIdRef.current) {
-                    endVoiceSession(sessionIdRef.current, durationRef.current).catch((err) =>
-                        console.error('Failed to end voice session on error:', err),
+            // Partial AI transcript → show word-by-word
+            if (message.role === 'assistant' && message.transcriptType === 'partial') {
+                setCurrentMessage(message.transcript);
+                return;
+            }
+
+            // Final transcript → add to messages
+            if (message.transcriptType === 'final') {
+                if (message.role === 'assistant') setCurrentMessage('');
+                if (message.role === 'user') setCurrentUserMessage('');
+
+                setMessages((prev) => {
+                    const isDupe = prev.some(
+                        (m) => m.role === message.role && m.content === message.transcript,
                     );
-                    sessionIdRef.current = null;
-                }
+                    return isDupe ? prev : [...prev, { role: message.role, content: message.transcript }];
+                });
+            }
+        };
 
-                // Show user-friendly error message
-                const errorMessage = error.message?.toLowerCase() || '';
-                if (errorMessage.includes('timeout') || errorMessage.includes('silence')) {
-                    setLimitError('Session ended due to inactivity. Click the mic to start again.');
-                } else if (errorMessage.includes('network') || errorMessage.includes('connection')) {
-                    setLimitError('Connection lost. Please check your internet and try again.');
-                } else {
-                    setLimitError('Session ended unexpectedly. Click the mic to start again.');
-                }
+        const handleError = (error: Error) => {
+            console.error('Vapi error:', error);
+            // Don't reset isStoppingRef here - delayed events may still fire
+            setStatus('idle');
+            setCurrentMessage('');
+            setCurrentUserMessage('');
 
-                startTimeRef.current = null;
-            },
+            // Stop timer on error
+            if (timerRef.current) {
+                clearInterval(timerRef.current);
+                timerRef.current = null;
+            }
+
+            // End session tracking on error
+            if (sessionIdRef.current) {
+                endVoiceSession(sessionIdRef.current, durationRef.current).catch((err) =>
+                    console.error('Failed to end voice session on error:', err),
+                );
+                sessionIdRef.current = null;
+            }
+
+            // Show user-friendly error message
+            const errorMessage = error.message?.toLowerCase() || '';
+            if (errorMessage.includes('timeout') || errorMessage.includes('silence')) {
+                setLimitError('Session ended due to inactivity. Click the mic to start again.');
+            } else if (errorMessage.includes('network') || errorMessage.includes('connection')) {
+                setLimitError('Connection lost. Please check your internet and try again.');
+            } else if (errorMessage.includes('not found') || errorMessage.includes('404')) {
+                setLimitError('Vapi Assistant not found. Please check your Assistant ID.');
+            } else {
+                setLimitError('Session ended unexpectedly. Click the mic to start again.');
+            }
+
+            startTimeRef.current = null;
         };
 
         // Register all handlers
-        Object.entries(handlers).forEach(([event, handler]) => {
-            getVapi().on(event as keyof typeof handlers, handler as () => void);
-        });
+        vapiInstance.on('call-start', handleCallStart);
+        vapiInstance.on('call-end', handleCallEnd);
+        vapiInstance.on('speech-start', handleSpeechStart);
+        vapiInstance.on('speech-end', handleSpeechEnd);
+        vapiInstance.on('message', handleMessage);
+        vapiInstance.on('error', handleError);
 
         return () => {
             // End active session on unmount
             if (sessionIdRef.current) {
-                getVapi().stop();
+                vapiInstance.stop();
                 endVoiceSession(sessionIdRef.current, durationRef.current).catch((err) =>
                     console.error('Failed to end voice session on unmount:', err),
                 );
                 sessionIdRef.current = null;
             }
-            // Cleanup handlers
-            Object.entries(handlers).forEach(([event, handler]) => {
-                getVapi().off(event as keyof typeof handlers, handler as () => void);
-            });
-            if (timerRef.current) clearInterval(timerRef.current);
+
+            // Cleanup handlers using the SAME references
+            vapiInstance.off('call-start', handleCallStart);
+            vapiInstance.off('call-end', handleCallEnd);
+            vapiInstance.off('speech-start', handleSpeechStart);
+            vapiInstance.off('speech-end', handleSpeechEnd);
+            vapiInstance.off('message', handleMessage);
+            vapiInstance.off('error', handleError);
+
+            if (timerRef.current) {
+                clearInterval(timerRef.current);
+                timerRef.current = null;
+            }
         };
-    }, []);
+    }, [durationRef, maxDurationRef]);
 
     const start = useCallback(async () => {
         if (!userId) {
@@ -238,6 +255,19 @@ export function useVapi(book: IBook) {
         setStatus('connecting');
 
         try {
+            const vapiInstance = getVapi();
+            if (!vapiInstance) {
+                setLimitError('Vapi API Key is missing. Please check your environment variables.');
+                setStatus('idle');
+                return;
+            }
+
+            if (!ASSISTANT_ID) {
+                setLimitError('Vapi Assistant ID is missing. Please check your environment variables.');
+                setStatus('idle');
+                return;
+            }
+
             // Check session limits and create session record
             const result = await startVoiceSession(userId, book._id);
 
@@ -254,7 +284,7 @@ export function useVapi(book: IBook) {
 
             const firstMessage = `Hey, good to meet you. Quick question before we dive in - have you actually read ${book.title} yet, or are we starting fresh?`;
 
-            await getVapi().start(ASSISTANT_ID, {
+            await vapiInstance.start(ASSISTANT_ID, {
                 firstMessage,
                 variableValues: {
                     title: book.title,
@@ -280,7 +310,7 @@ export function useVapi(book: IBook) {
 
     const stop = useCallback(() => {
         isStoppingRef.current = true;
-        getVapi().stop();
+        getVapi()?.stop();
     }, []);
 
     const clearError = useCallback(() => {
@@ -295,10 +325,9 @@ export function useVapi(book: IBook) {
         status === 'speaking';
 
     // Calculate remaining time
-    // const maxDurationSeconds = limits.maxSessionMinutes * SECONDS_PER_MINUTE;
-    // const remainingSeconds = Math.max(0, maxDurationSeconds - duration);
-    // const showTimeWarning =
-    //     isActive && remainingSeconds <= TIME_WARNING_THRESHOLD && remainingSeconds > 0;
+    const remainingSeconds = Math.max(0, maxDurationSeconds - duration);
+    const showTimeWarning =
+        isActive && remainingSeconds <= TIME_WARNING_THRESHOLD && remainingSeconds > 0;
 
     return {
         status,
@@ -313,9 +342,8 @@ export function useVapi(book: IBook) {
         isBillingError,
         maxDurationSeconds,
         clearError,
-        // maxDurationSeconds,
-        // remainingSeconds,
-        // showTimeWarning,
+        remainingSeconds,
+        showTimeWarning,
     };
 }
 

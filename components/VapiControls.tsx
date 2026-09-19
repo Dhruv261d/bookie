@@ -11,7 +11,7 @@ import {useRouter} from "next/navigation";
 import {useEffect} from "react";
 
 const VapiControls = ({ book }: { book: IBook }) => {
-    const { status, isActive, messages, currentMessage, currentUserMessage, duration, start, stop, clearError, limitError, isBillingError, maxDurationSeconds } = useVapi(book)
+    const { status, isActive, messages, currentMessage, currentUserMessage, duration, start, stop, clearError, limitError, isBillingError, maxDurationSeconds, showTimeWarning, remainingSeconds } = useVapi(book)
     const router = useRouter();
 
     useEffect(() => {
@@ -48,6 +48,15 @@ const VapiControls = ({ book }: { book: IBook }) => {
     return (
         <>
             <div className="max-w-4xl mx-auto flex flex-col gap-8">
+                {showTimeWarning && (
+                    <div className="warning-banner animate-in fade-in slide-in-from-top-4 duration-500">
+                        <div className="warning-banner-content">
+                            <span className="warning-banner-text">
+                                Warning: Session ends in {remainingSeconds} seconds. Upgrade your plan for longer sessions.
+                            </span>
+                        </div>
+                    </div>
+                )}
                 {/* Header Card */}
                 <div className="vapi-header-card">
                     <div className="vapi-cover-wrapper">

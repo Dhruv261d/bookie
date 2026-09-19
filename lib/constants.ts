@@ -73,8 +73,8 @@ export const sampleBooks = [
         title: 'The Courage to Be Disliked',
         author: 'Fumitake Koga & Ichiro Kishimi',
         slug: 'the-courage-to-be-disliked',
-        coverURL: 'https://covers.openlibrary.org/b/isbn/9781501197274-L.jpg',
-        coverColor: '#f8f4e9',
+        coverURL: '/assets/courage_to_be_disliked.png',
+        coverColor: '#e0f2fe',
     },
     {
         _id: '10',
@@ -93,7 +93,7 @@ export const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10MB
 export const ACCEPTED_IMAGE_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
 
 // Pre-configured VAPI assistant ID (hardcoded for this app)
-export const ASSISTANT_ID = process.env.NEXT_PUBLIC_ASSISTANT_ID!;
+export const ASSISTANT_ID = process.env.NEXT_PUBLIC_ASSISTANT_ID;
 
 // 11Labs Voice IDs - Optimized for conversational AI
 // Voices selected for natural, engaging book conversations
